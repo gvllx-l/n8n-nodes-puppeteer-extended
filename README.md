@@ -2,7 +2,7 @@
 
 ![n8n.io - Workflow Automation](https://raw.githubusercontent.com/n8n-io/n8n/master/assets/n8n-logo.png)
 
-[n8n](https://www.n8n.io) node based on [n8n-nodes-puppeteer](https://github.com/drudge/n8n-nodes-puppeteer) for requesting webpages using [Puppeteer](https://pptr.dev/), a Node library which provides a high-level API to control Chrome or Chromium over the [DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/).
+[n8n](https://www.n8n.io) node based on [n8n-nodes-puppeteer](https://github.com/drudge/n8n-nodes-puppeteer) and [n8n-nodes-puppeteer-extended](https://github.com/hckdotng/n8n-nodes-puppeteer-extended) for requesting webpages using [Puppeteer](https://pptr.dev/), a Node library which provides a high-level API to control Chrome or Chromium over the [DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/).
 
 This version brings features allowing more complex interactions with web pages:
 
