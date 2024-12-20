@@ -1,4 +1,4 @@
-import { INodeProperties, INodeTypeDescription } from "n8n-workflow";
+import { INodeProperties, INodeTypeDescription, NodeConnectionType } from "n8n-workflow";
 
 const globalOptions: INodeProperties[] = [
 	{
@@ -792,14 +792,8 @@ export const nodeDescription: INodeTypeDescription = {
 		color: "#125580",
 	},
 	icon: "file:puppeteer.svg",
-	inputs: ["main"],
-	outputs: ["main"],
-	credentials: [
-		{
-			name: "n8nApi",
-			required: true,
-		},
-	],
+	inputs: [NodeConnectionType.Main],
+	outputs: [NodeConnectionType.Main],
 	properties: [
 		{
 			displayName: "Global options",

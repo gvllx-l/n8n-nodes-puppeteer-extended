@@ -1,7 +1,8 @@
 import {
 	Page,
 	PuppeteerLifeCycleEvent,
-	devices,
+	Device,
+	KnownDevices as devices,
 	HTTPResponse,
 	ScreenshotOptions,
 	PDFOptions,
@@ -10,6 +11,7 @@ import {
 import { IDataObject, IBinaryData } from "n8n-workflow";
 import state from "./state";
 import { INodeParameters } from "./helpers";
+import { setTimeout } from "node:timers/promises";
 
 interface IPageContent {
 	dataPropertyName: string;
@@ -18,6 +20,11 @@ interface IPageContent {
 	innerHtml: boolean;
 	selectAll: boolean;
 	noAttributes: boolean;
+}
+
+interface QueryParameter {
+	name: string;
+	value: string;
 }
 
 async function pageContent(getPageContent: IPageContent, page: Page) {
@@ -36,16 +43,9 @@ async function pageContent(getPageContent: IPageContent, page: Page) {
 		if (hasHtmlToJson) {
 			content = await page
 				.evaluate(
-					(
-						cssSelector: string,
-						hasSelectAll: boolean,
-						hasNoAttributes: boolean
-					) => {
+					(cssSelector: string, hasSelectAll: boolean, hasNoAttributes: boolean) => {
 						function cleanText(text: string) {
-							const replaced = text
-								.replace(/\\n+/g, "\n")
-								.replace(/\s+/g, " ")
-								.trim();
+							const replaced = text.replace(/\\n+/g, "\n").replace(/\s+/g, " ").trim();
 							if (replaced === "\n") return "";
 							return replaced;
 						}
@@ -55,17 +55,13 @@ async function pageContent(getPageContent: IPageContent, page: Page) {
 								const attributes: any = {};
 								if (element.attributes && !hasNoAttributes) {
 									for (let j = 0; j < element.attributes.length; j++) {
-										attributes["@" + element.attributes[j].nodeName] =
-											element.attributes[j].nodeValue;
+										attributes["@" + element.attributes[j].nodeName] = element.attributes[j].nodeValue;
 									}
 								}
 
 								let value: any;
 
-								if (
-									element.childNodes.length === 1 &&
-									element.childNodes[0].nodeName === "#text"
-								) {
+								if (element.childNodes.length === 1 && element.childNodes[0].nodeName === "#text") {
 									value = cleanText(element.childNodes[0].textContent);
 									if (!Object.keys(attributes).length) return value;
 								} else {
@@ -75,20 +71,16 @@ async function pageContent(getPageContent: IPageContent, page: Page) {
 										const nodeName = childNode.nodeName.toLowerCase();
 
 										if (!value[nodeName]) value[nodeName] = childNode;
-										else if (Array.isArray(value[nodeName]))
-											value[nodeName].push(childNode);
+										else if (Array.isArray(value[nodeName])) value[nodeName].push(childNode);
 										else value[nodeName] = [value[nodeName], childNode];
 									}
 								}
 
-								if (value && typeof value === "object")
-									delete value["#comment"];
+								if (value && typeof value === "object") delete value["#comment"];
 
 								return {
 									...attributes,
-									...(typeof value === "object"
-										? { ...value }
-										: { "#text": cleanText(value) }),
+									...(typeof value === "object" ? { ...value } : { "#text": cleanText(value) }),
 								};
 							}
 
@@ -113,8 +105,7 @@ async function pageContent(getPageContent: IPageContent, page: Page) {
 												if (typeof e === "string" && e) return e;
 												if (Object.keys(e).length) return e;
 											});
-											if (element[key].length === 1)
-												element[key] = element[key][0];
+											if (element[key].length === 1) element[key] = element[key][0];
 											else if (!element[key].length) delete element[key];
 										} else {
 											const nodeType = element[key].nodeType;
@@ -122,10 +113,7 @@ async function pageContent(getPageContent: IPageContent, page: Page) {
 												element[key] = htmlToJson(element[key]);
 												recursiveHtmlToJson(element[key]);
 												if (!element[key]) delete element[key];
-												if (
-													typeof element[key] === "object" &&
-													!Object.keys(element[key]).length
-												)
+												if (typeof element[key] === "object" && !Object.keys(element[key]).length)
 													delete element[key];
 											} else if (nodeType && nodeType === 3) {
 												element[key] = cleanText(element[key].textContent);
@@ -139,13 +127,9 @@ async function pageContent(getPageContent: IPageContent, page: Page) {
 
 						const selection: (Element | Document | null)[] = [];
 						if (cssSelector && hasSelectAll) {
-							document
-								.querySelectorAll(cssSelector)
-								.forEach((e) => selection.push(e));
+							document.querySelectorAll(cssSelector).forEach((e) => selection.push(e));
 						} else {
-							selection.push(
-								cssSelector ? document.querySelector(cssSelector) : document
-							);
+							selection.push(cssSelector ? document.querySelector(cssSelector) : document);
 						}
 
 						let parsed: any[] = [];
@@ -172,11 +156,7 @@ async function pageContent(getPageContent: IPageContent, page: Page) {
 			content = cssSelector
 				? await page
 						.evaluate(
-							(
-								cssSelector: string,
-								hasInnerHtml: boolean,
-								hasSelectAll: boolean
-							) => {
+							(cssSelector: string, hasInnerHtml: boolean, hasSelectAll: boolean) => {
 								if (cssSelector && hasSelectAll) {
 									const selection: string[] = [];
 									document.querySelectorAll(cssSelector).forEach((e) => {
@@ -236,8 +216,7 @@ async function pageScreenshot(options: IPageScreenshot, page: Page) {
 		screenshot = (await page.screenshot(screenshotOptions)) as Buffer;
 	}
 
-	if (screenshot)
-		return { [options.dataPropertyName]: { type, data: screenshot } };
+	if (screenshot) return { [options.dataPropertyName]: { type, data: screenshot } };
 	return {};
 }
 
@@ -330,38 +309,38 @@ export default async function (
 		let page: Page, response;
 
 		if (urlString) {
-			const { parameter: someHeaders = [] } = (nodeParameters.globalOptions
-				.headers || {}) as any;
-			const queryParameters = nodeParameters.queryParameters?.parameter ?? [];
+			const { parameter: someHeaders = [] } = (nodeParameters.globalOptions.headers || {}) as any;
+
+			const queryParameters = (nodeParameters.queryParameters?.parameter as QueryParameter[]) || [];
+
 			const requestHeaders = someHeaders.reduce((acc: any, cur: any) => {
 				acc[cur.name] = cur.value;
 				return acc;
 			}, {});
+
 			const device = nodeParameters.globalOptions.device as string;
 
 			const url = new URL(urlString);
+
 			page = await browser.newPage();
 
 			if (nodeParameters.globalOptions.viewport) {
-				const viewport = nodeParameters.globalOptions.viewport as {
-					size: { width: number; height: number };
-				};
+				const viewport = nodeParameters.globalOptions.viewport as { size: { width: number; height: number } };
+
 				const { width, height } = viewport.size;
+
 				await page.setViewport({ width, height });
 			}
 
 			await page.setCacheEnabled(pageCaching);
 
 			if (device) {
-				const emulatedDevice = devices[device];
+				const emulatedDevice = devices[device as keyof typeof devices] as Device;
 				if (emulatedDevice) {
 					await page.emulate(emulatedDevice);
 				}
 			} else {
-				const userAgent =
-					requestHeaders["User-Agent"] ||
-					requestHeaders["user-agent"] ||
-					DEFAULT_USER_AGENT;
+				const userAgent = requestHeaders["User-Agent"] || requestHeaders["user-agent"] || DEFAULT_USER_AGENT;
 				await page.setUserAgent(userAgent);
 			}
 
@@ -378,10 +357,7 @@ export default async function (
 
 			state.executions[executionId].previousPage = page;
 			state.executions[executionId].previousResponse = response;
-		} else if (
-			state.executions[executionId].previousPage &&
-			state.executions[executionId].previousResponse
-		) {
+		} else if (state.executions[executionId].previousPage && state.executions[executionId].previousResponse) {
 			page = state.executions[executionId].previousPage as Page;
 			response = state.executions[executionId].previousResponse;
 
@@ -394,39 +370,26 @@ export default async function (
 		}
 
 		// time to wait
-		if (
-			nodeParameters.nodeOptions.timeToWait ||
-			nodeParameters.globalOptions.timeToWait
-		)
-			await page.waitForTimeout(
-				nodeParameters.nodeOptions.timeToWait ??
-					nodeParameters.globalOptions.timeToWait
-			);
+		if (nodeParameters.nodeOptions.timeToWait || nodeParameters.globalOptions.timeToWait)
+			await setTimeout(nodeParameters.nodeOptions.timeToWait ?? nodeParameters.globalOptions.timeToWait);
 
 		// wait for selector
-		if (
-			nodeParameters.nodeOptions.waitForSelector ||
-			nodeParameters.globalOptions.waitForSelector
-		)
+		if (nodeParameters.nodeOptions.waitForSelector || nodeParameters.globalOptions.waitForSelector)
 			await page.waitForSelector(
-				nodeParameters.nodeOptions.waitForSelector ??
-					nodeParameters.globalOptions.waitForSelector,
-				{ timeout: 10000 }
+				nodeParameters.nodeOptions.waitForSelector ?? nodeParameters.globalOptions.waitForSelector,
+				{
+					timeout: 10000,
+				}
 			);
 
 		// inject html
-		if (
-			nodeParameters.nodeOptions.injectHtml ||
-			nodeParameters.globalOptions.injectHtml
-		) {
+		if (nodeParameters.nodeOptions.injectHtml || nodeParameters.globalOptions.injectHtml) {
 			await page.evaluate(
 				async (nodeParameters: INodeParameters, globalOptions: IDataObject) => {
 					const img = document.createElement("img");
 					img.style.display = "none";
 					const div = document.createElement("div");
-					const content =
-						nodeParameters.nodeOptions.injectHtml ??
-						nodeParameters.globalOptions.injectHtml;
+					const content = nodeParameters.nodeOptions.injectHtml ?? nodeParameters.globalOptions.injectHtml;
 					div.innerHTML = content;
 					const promise = new Promise((resolve, reject) => {
 						img.onload = resolve;
@@ -444,16 +407,11 @@ export default async function (
 		}
 
 		// inject css
-		if (
-			nodeParameters.nodeOptions.injectCss ||
-			nodeParameters.globalOptions.injectCss
-		) {
+		if (nodeParameters.nodeOptions.injectCss || nodeParameters.globalOptions.injectCss) {
 			await page.evaluate(
 				async (nodeParameters: INodeParameters, globalOptions: IDataObject) => {
 					const style = document.createElement("style");
-					const content =
-						nodeParameters.nodeOptions.injectCss ??
-						nodeParameters.globalOptions.injectCss;
+					const content = nodeParameters.nodeOptions.injectCss ?? nodeParameters.globalOptions.injectCss;
 					style.appendChild(document.createTextNode(content));
 					const promise = new Promise((resolve, reject) => {
 						style.onload = resolve;
@@ -468,16 +426,11 @@ export default async function (
 		}
 
 		// inject js
-		if (
-			nodeParameters.nodeOptions.injectJs ||
-			nodeParameters.globalOptions.injectJs
-		) {
+		if (nodeParameters.nodeOptions.injectJs || nodeParameters.globalOptions.injectJs) {
 			await page.evaluate(
 				async (nodeParameters: INodeParameters, globalOptions: IDataObject) => {
 					const script = document.createElement("script");
-					const content =
-						nodeParameters.nodeOptions.injectJs ??
-						nodeParameters.globalOptions.injectJs;
+					const content = nodeParameters.nodeOptions.injectJs ?? nodeParameters.globalOptions.injectJs;
 					script.appendChild(document.createTextNode(content));
 					const promise = new Promise((resolve, reject) => {
 						script.onload = resolve;
@@ -547,9 +500,7 @@ export default async function (
 				allPageContent.push(pageContent(options, page));
 			});
 
-			const resolvedAllPageContent = await Promise.all(allPageContent).catch(
-				(e: any) => console.log(e)
-			);
+			const resolvedAllPageContent = await Promise.all(allPageContent).catch((e: any) => console.log(e));
 
 			(resolvedAllPageContent ?? []).forEach((pageContent) => {
 				data.json[pageContent.dataPropertyName] = pageContent.content;
@@ -567,15 +518,11 @@ export default async function (
 			if (nodeParameters.output.getScreenshot) {
 				const allScreenshot: any[] = [];
 
-				nodeParameters.output.getScreenshot.forEach(
-					async (options: IPageScreenshot) => {
-						allScreenshot.push(pageScreenshot(options, page));
-					}
-				);
+				nodeParameters.output.getScreenshot.forEach(async (options: IPageScreenshot) => {
+					allScreenshot.push(pageScreenshot(options, page));
+				});
 
-				const resolvedAllPageScreenshot = await Promise.all(
-					allScreenshot
-				).catch((e: any) => console.log(e));
+				const resolvedAllPageScreenshot = await Promise.all(allScreenshot).catch((e: any) => console.log(e));
 
 				(resolvedAllPageScreenshot ?? []).forEach((pageScreenshot) => {
 					if (pageScreenshot) {
